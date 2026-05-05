@@ -58,6 +58,6 @@ body {
 
 table { @apply w-full text-sm; }
 thead tr { @apply border-b border-slate-100; }
-thead th { @apply text-left text-xs font-700 text-slate-400 uppercase tracking-wide py-3 px-4; }
+thead th { @apply text-left text-xs font-bold text-slate-400 uppercase tracking-wide py-3 px-4; }
 tbody tr { @apply border-b border-slate-50 hover:bg-slate-50 transition-colors; }
 tbody td { @apply py-3 px-4 text-slate-700; }
