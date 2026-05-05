@@ -119,21 +119,21 @@ CREATE INDEX IF NOT EXISTS idx_common_addresses_address ON common_addresses USIN
 -- Пароль: admin123 (bcrypt hash)
 INSERT INTO users (username, email, hashed_password, full_name, role_id)
 SELECT 'dispatcher', 'dispatcher@company.ru',
-       '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW',
+       '$2b$12$cdC4eJx2RTDeyfseIOAHvuK4OTP78EWs8lMFSN0tHdveC/72t6dui',
        'Главный диспетчер', r.id
 FROM roles r WHERE r.name = 'dispatcher'
 ON CONFLICT (username) DO NOTHING;
 
 INSERT INTO users (username, email, hashed_password, full_name, role_id)
 SELECT 'employee1', 'employee1@company.ru',
-       '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW',
+       '$2b$12$cdC4eJx2RTDeyfseIOAHvuK4OTP78EWs8lMFSN0tHdveC/72t6dui',
        'Иванов Иван Иванович', r.id
 FROM roles r WHERE r.name = 'employee'
 ON CONFLICT (username) DO NOTHING;
 
 INSERT INTO users (username, email, hashed_password, full_name, role_id)
 SELECT 'driver1', 'driver1@company.ru',
-       '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW',
+       '$2b$12$cdC4eJx2RTDeyfseIOAHvuK4OTP78EWs8lMFSN0tHdveC/72t6dui',
        'Петров Пётр Петрович', r.id
 FROM roles r WHERE r.name = 'driver'
 ON CONFLICT (username) DO NOTHING;
