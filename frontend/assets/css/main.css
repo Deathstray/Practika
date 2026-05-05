@@ -38,7 +38,7 @@ body {
 }
 
 .label {
-  @apply block text-sm font-600 text-slate-600 mb-1.5;
+  @apply block text-sm font-semibold text-slate-600 mb-1.5;
 }
 
 .status-new { @apply bg-blue-50 text-blue-700 border border-blue-200; }
