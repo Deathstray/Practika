@@ -1,12 +1,15 @@
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql://transport:transport123@localhost:5432/transport_db"
+    # SQLite — не нужна установка PostgreSQL
+    DATABASE_URL: str = "sqlite:///./transport.db"
     SECRET_KEY: str = "super-secret-jwt-key-change-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
     class Config:
         env_file = ".env"
+
 
 settings = Settings()

@@ -1,14 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database import engine
-from models import Base
+from seed import seed
 from routers.auth import router as auth_router
 from routers.drivers import router as drivers_router
 from routers.vehicles import router as vehicles_router
 from routers.orders import router as orders_router
 from routers.extra import addr_router, stats_router
 
-Base.metadata.create_all(bind=engine)
+# Создаём таблицы и заполняем начальными данными
+seed()
 
 app = FastAPI(
     title="Система диспетчеризации служебного транспорта",

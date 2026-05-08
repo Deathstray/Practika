@@ -63,29 +63,43 @@ def _add_history(db: Session, order: Order, new_status: str, user: User, comment
 
 
 def _check_driver_available(db: Session, driver_id: int, start: datetime, duration_min: int, exclude_order_id: int = None):
+    """
+    Проверяет, не занят ли водитель в интервале [start, start+duration_min].
+    Для каждой существующей заявки используем её реальную длительность.
+    """
     end = start + timedelta(minutes=duration_min)
-    q = db.query(Order).filter(
+    existing_orders = db.query(Order).filter(
         Order.driver_id == driver_id,
         Order.status.in_(["accepted", "in_progress"]),
-        Order.desired_datetime < end,
-        (Order.desired_datetime + timedelta(minutes=60)) > start,
     )
     if exclude_order_id:
-        q = q.filter(Order.id != exclude_order_id)
-    return q.first()
+        existing_orders = existing_orders.filter(Order.id != exclude_order_id)
+    for o in existing_orders.all():
+        o_start = o.desired_datetime
+        o_end = o_start + timedelta(minutes=o.expected_duration_minutes)
+        if o_start < end and o_end > start:
+            return o
+    return None
 
 
 def _check_vehicle_available(db: Session, vehicle_id: int, start: datetime, duration_min: int, exclude_order_id: int = None):
+    """
+    Проверяет, не занят ли автомобиль в интервале [start, start+duration_min].
+    Для каждой существующей заявки используем её реальную длительность.
+    """
     end = start + timedelta(minutes=duration_min)
-    q = db.query(Order).filter(
+    existing_orders = db.query(Order).filter(
         Order.vehicle_id == vehicle_id,
         Order.status.in_(["accepted", "in_progress"]),
-        Order.desired_datetime < end,
-        (Order.desired_datetime + timedelta(minutes=60)) > start,
     )
     if exclude_order_id:
-        q = q.filter(Order.id != exclude_order_id)
-    return q.first()
+        existing_orders = existing_orders.filter(Order.id != exclude_order_id)
+    for o in existing_orders.all():
+        o_start = o.desired_datetime
+        o_end = o_start + timedelta(minutes=o.expected_duration_minutes)
+        if o_start < end and o_end > start:
+            return o
+    return None
 
 
 # ── Employee endpoints ────────────────────────────────────────────────────────
@@ -104,7 +118,6 @@ def create_order(
     db.flush()
     h = OrderStatusHistory(order_id=o.id, new_status="new", changed_by=current_user.id, comment="Заявка создана")
     db.add(h)
-    # increment address usage
     for addr in [data.departure_address, data.destination_address]:
         ca = db.query(CommonAddress).filter(CommonAddress.address == addr).first()
         if ca:
@@ -143,6 +156,80 @@ def cancel_order(
     db.commit()
     db.refresh(o)
     return _build_order_out(o)
+
+
+# ── Driver endpoints (объявлены ДО параметризованных маршрутов) ───────────────
+
+@router.get("/driver/assignments", response_model=List[OrderOut])
+def driver_assignments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("driver")),
+):
+    driver = db.query(Driver).filter(Driver.user_id == current_user.id).first()
+    if not driver:
+        raise HTTPException(status_code=404, detail="Профиль водителя не найден. Обратитесь к диспетчеру.")
+    orders = (
+        db.query(Order)
+        .filter(Order.driver_id == driver.id, Order.status.in_(["in_progress", "completed"]))
+        .order_by(Order.desired_datetime.desc())
+        .all()
+    )
+    return [_build_order_out(o) for o in orders]
+
+
+# ── Export (объявлен ДО параметризованных маршрутов) ─────────────────────────
+
+@router.get("/export/excel")
+def export_excel(
+    status: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    driver_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role("dispatcher")),
+):
+    q = db.query(Order)
+    if status:
+        q = q.filter(Order.status == status)
+    if date_from:
+        q = q.filter(Order.desired_datetime >= date_from)
+    if date_to:
+        q = q.filter(Order.desired_datetime <= date_to)
+    if driver_id:
+        q = q.filter(Order.driver_id == driver_id)
+    orders = q.order_by(Order.desired_datetime.desc()).all()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "История поездок"
+
+    headers = ["ID", "Сотрудник", "Водитель", "Автомобиль", "Откуда", "Куда",
+               "Дата/время", "Цель", "Статус", "Время выезда", "Время возврата"]
+    ws.append(headers)
+
+    for o in orders:
+        ws.append([
+            o.id,
+            o.employee.full_name if o.employee else "",
+            o.driver.full_name if o.driver else "",
+            f"{o.vehicle.make} {o.vehicle.model} ({o.vehicle.license_plate})" if o.vehicle else "",
+            o.departure_address,
+            o.destination_address,
+            o.desired_datetime.strftime("%d.%m.%Y %H:%M") if o.desired_datetime else "",
+            o.purpose,
+            o.status,
+            o.actual_departure.strftime("%d.%m.%Y %H:%M") if o.actual_departure else "",
+            o.actual_return.strftime("%d.%m.%Y %H:%M") if o.actual_return else "",
+        ])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=history.xlsx"},
+    )
 
 
 # ── Dispatcher endpoints ──────────────────────────────────────────────────────
@@ -270,25 +357,6 @@ def assign_order(
     return _build_order_out(o)
 
 
-# ── Driver endpoints ──────────────────────────────────────────────────────────
-
-@router.get("/driver/assignments", response_model=List[OrderOut])
-def driver_assignments(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("driver")),
-):
-    driver = db.query(Driver).filter(Driver.user_id == current_user.id).first()
-    if not driver:
-        raise HTTPException(status_code=404, detail="Профиль водителя не найден. Обратитесь к диспетчеру.")
-    orders = (
-        db.query(Order)
-        .filter(Order.driver_id == driver.id, Order.status.in_(["in_progress", "completed"]))
-        .order_by(Order.desired_datetime.desc())
-        .all()
-    )
-    return [_build_order_out(o) for o in orders]
-
-
 @router.post("/{order_id}/depart", response_model=OrderOut)
 def mark_departure(
     order_id: int,
@@ -303,6 +371,8 @@ def mark_departure(
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     if o.status != "in_progress":
         raise HTTPException(status_code=400, detail="Заявка не в статусе 'выполняется'")
+    if o.actual_departure:
+        raise HTTPException(status_code=400, detail="Выезд уже отмечен")
     o.actual_departure = datetime.now(timezone.utc)
     h = OrderStatusHistory(order_id=o.id, old_status=o.status, new_status=o.status,
                            changed_by=current_user.id, comment="Водитель выехал")
@@ -326,63 +396,10 @@ def mark_return(
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     if o.status != "in_progress":
         raise HTTPException(status_code=400, detail="Заявка не в статусе 'выполняется'")
+    if not o.actual_departure:
+        raise HTTPException(status_code=400, detail="Сначала отметьте выезд")
     o.actual_return = datetime.now(timezone.utc)
     _add_history(db, o, "completed", current_user, "Водитель вернулся, поездка завершена")
     db.commit()
     db.refresh(o)
     return _build_order_out(o)
-
-
-# ── Export ────────────────────────────────────────────────────────────────────
-
-@router.get("/export/excel")
-def export_excel(
-    status: Optional[str] = None,
-    date_from: Optional[datetime] = None,
-    date_to: Optional[datetime] = None,
-    driver_id: Optional[int] = None,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_role("dispatcher")),
-):
-    q = db.query(Order)
-    if status:
-        q = q.filter(Order.status == status)
-    if date_from:
-        q = q.filter(Order.desired_datetime >= date_from)
-    if date_to:
-        q = q.filter(Order.desired_datetime <= date_to)
-    if driver_id:
-        q = q.filter(Order.driver_id == driver_id)
-    orders = q.order_by(Order.desired_datetime.desc()).all()
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "История поездок"
-
-    headers = ["ID", "Сотрудник", "Водитель", "Автомобиль", "Откуда", "Куда",
-               "Дата/время", "Цель", "Статус", "Время выезда", "Время возврата"]
-    ws.append(headers)
-
-    for o in orders:
-        ws.append([
-            o.id,
-            o.employee.full_name if o.employee else "",
-            o.driver.full_name if o.driver else "",
-            f"{o.vehicle.make} {o.vehicle.model} ({o.vehicle.license_plate})" if o.vehicle else "",
-            o.departure_address,
-            o.destination_address,
-            o.desired_datetime.strftime("%d.%m.%Y %H:%M") if o.desired_datetime else "",
-            o.purpose,
-            o.status,
-            o.actual_departure.strftime("%d.%m.%Y %H:%M") if o.actual_departure else "",
-            o.actual_return.strftime("%d.%m.%Y %H:%M") if o.actual_return else "",
-        ])
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return StreamingResponse(
-        output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=history.xlsx"},
-    )
