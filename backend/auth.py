@@ -1,24 +1,31 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+
 from database import get_db
 from models import User
 from config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    """Проверка пароля — совместимо с bcrypt 4.x и 5.x."""
+    return bcrypt.checkpw(
+        plain.encode("utf-8"),
+        hashed.encode("utf-8"),
+    )
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    """Хеширование пароля — совместимо с bcrypt 4.x и 5.x."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
