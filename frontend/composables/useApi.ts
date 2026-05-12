@@ -4,16 +4,24 @@ export function useApi() {
   const config = useRuntimeConfig();
   const auth = useAuthStore();
 
+  const apiBase = (config.public.apiBase || "/api").replace(/\/$/, "");
+
+  function buildUrl(path: string) {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    return `${apiBase}${normalizedPath}`;
+  }
+
   async function request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(options.headers as Record<string, string>),
     };
+
     if (auth.token) {
       headers["Authorization"] = `Bearer ${auth.token}`;
     }
 
-    const res = await fetch(`${config.public.apiBase}${path}`, {
+    const res = await fetch(buildUrl(path), {
       ...options,
       headers,
     });
@@ -42,11 +50,13 @@ export function useApi() {
       request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
     delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
     download: async (path: string) => {
-      const res = await fetch(`${config.public.apiBase}${path}`, {
+      const res = await fetch(buildUrl(path), {
         headers: { Authorization: `Bearer ${auth.token}` },
       });
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
+
       const a = document.createElement("a");
       a.href = url;
       a.download = "history.xlsx";

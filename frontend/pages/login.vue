@@ -19,24 +19,29 @@
             <label class="label">Имя пользователя</label>
             <input v-model="form.username" type="text" class="input-field" placeholder="username" required />
           </div>
+
           <div class="mb-6">
             <label class="label">Пароль</label>
             <input v-model="form.password" type="password" class="input-field" placeholder="••••••••" required />
           </div>
+
           <p v-if="error" class="text-red-500 text-sm mb-4">{{ error }}</p>
+
           <button type="submit" class="btn-primary w-full" :disabled="loading">
             {{ loading ? "Вход..." : "Войти" }}
           </button>
         </form>
-        <p class="text-center text-sm text-slate-500 mt-5">
-          Нет аккаунта?
-          <NuxtLink to="/register" class="text-brand-500 font-semibold hover:underline">Зарегистрироваться</NuxtLink>
-        </p>
 
-        <!-- Demo hints -->
+        <div class="text-center mt-5">
+          <p class="text-slate-500 text-sm">
+            Нет аккаунта?
+            <NuxtLink to="/register" class="text-brand-600 font-semibold">Зарегистрироваться</NuxtLink>
+          </p>
+        </div>
+
         <div class="mt-6 pt-5 border-t border-slate-100">
-          <p class="text-xs text-slate-400 mb-2 font-semibold uppercase tracking-wide">Демо-аккаунты (пароль: admin123)</p>
-          <div class="grid grid-cols-3 gap-2 text-xs">
+          <p class="text-xs text-slate-400 uppercase font-semibold tracking-wide mb-3">Демо-аккаунты (пароль: admin123)</p>
+          <div class="grid grid-cols-3 gap-2">
             <button @click="fillDemo('dispatcher')" class="bg-slate-50 hover:bg-slate-100 rounded-lg p-2 text-center transition-colors">
               <div class="font-semibold text-slate-700">dispatcher</div>
               <div class="text-slate-400">Диспетчер</div>
@@ -62,9 +67,12 @@ import { useAuthStore } from "~/stores/auth";
 definePageMeta({ layout: false });
 
 const auth = useAuthStore();
+
 const config = useRuntimeConfig();
+const apiBase = (config.public.apiBase || "/api").replace(/\/$/, "");
 
 const form = reactive({ username: "", password: "" });
+
 const loading = ref(false);
 const error = ref("");
 
@@ -76,21 +84,24 @@ function fillDemo(username: string) {
 async function handleLogin() {
   loading.value = true;
   error.value = "";
+
   try {
-    const res = await fetch(`${config.public.apiBase}/auth/login`, {
+    const res = await fetch(`${apiBase}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
     });
+
     if (!res.ok) {
-      const e = await res.json();
+      const e = await res.json().catch(() => ({ detail: "Ошибка входа" }));
       throw new Error(e.detail || "Ошибка входа");
     }
+
     const data = await res.json();
     auth.setAuth(data);
     navigateTo(`/${data.role}`);
   } catch (e: any) {
-    error.value = e.message;
+    error.value = e.message || "Ошибка входа";
   } finally {
     loading.value = false;
   }
