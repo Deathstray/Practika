@@ -1,44 +1,52 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-brand-900 via-brand-800 to-slate-950 flex items-center justify-center p-4">
+  <div class="min-h-screen bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center p-4">
     <div class="w-full max-w-md">
       <div class="text-center mb-8">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white/10 mb-4">
+          <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+          </svg>
+        </div>
         <h1 class="text-2xl font-bold text-white">Регистрация</h1>
-        <p class="text-brand-200 text-sm mt-1">Создайте аккаунт</p>
+        <p class="text-slate-400 text-sm mt-1">Создание аккаунта сотрудника</p>
       </div>
+
       <div class="bg-white rounded-2xl p-8 shadow-2xl">
-        <form @submit.prevent="handleRegister">
-          <div class="mb-4">
-            <label class="label">ФИО</label>
-            <input v-model="form.full_name" type="text" class="input-field" placeholder="Иванов Иван Иванович" required />
-          </div>
-          <div class="mb-4">
-            <label class="label">Имя пользователя</label>
-            <input v-model="form.username" type="text" class="input-field" placeholder="ivanov" required />
-          </div>
-          <div class="mb-4">
-            <label class="label">Email</label>
-            <input v-model="form.email" type="email" class="input-field" placeholder="ivanov@company.ru" required />
-          </div>
-          <div class="mb-4">
-            <label class="label">Пароль</label>
-            <input v-model="form.password" type="password" class="input-field" required />
-          </div>
-          <div class="mb-6">
-            <label class="label">Роль</label>
-            <select v-model="form.role" class="input-field">
-              <option value="employee">Сотрудник</option>
-              <option value="dispatcher">Диспетчер</option>
-              <option value="driver">Водитель</option>
-            </select>
-          </div>
-          <p v-if="error" class="text-red-500 text-sm mb-4">{{ error }}</p>
-          <button type="submit" class="btn-primary w-full" :disabled="loading">
-            {{ loading ? "Регистрация..." : "Зарегистрироваться" }}
-          </button>
-        </form>
-        <p class="text-center text-sm text-slate-500 mt-5">
+        <div class="mb-4">
+          <label class="label">Полное имя</label>
+          <input v-model="form.full_name" type="text" class="input-field" placeholder="Иванов Иван Иванович" />
+        </div>
+        <div class="mb-4">
+          <label class="label">Имя пользователя</label>
+          <input v-model="form.username" type="text" class="input-field" placeholder="ivanov" />
+        </div>
+        <div class="mb-4">
+          <label class="label">Email</label>
+          <input v-model="form.email" type="email" class="input-field" placeholder="ivanov@company.ru" />
+        </div>
+        <div class="mb-6">
+          <label class="label">Пароль</label>
+          <input v-model="form.password" type="password" class="input-field" placeholder="Минимум 6 символов" />
+        </div>
+
+        <!-- Роль фиксирована, скрыта от пользователя -->
+        <input type="hidden" v-model="form.role" />
+
+        <div class="bg-slate-50 rounded-xl px-4 py-3 text-sm text-slate-500 mb-6">
+          Регистрация доступна только для роли <strong>Сотрудник</strong>.
+          Аккаунты диспетчеров и водителей создаются администратором.
+        </div>
+
+        <p v-if="error" class="text-red-500 text-sm mb-4">{{ error }}</p>
+
+        <button @click="submit" class="btn-primary w-full mb-4" :disabled="loading">
+          {{ loading ? "Регистрация..." : "Зарегистрироваться" }}
+        </button>
+
+        <p class="text-center text-sm text-slate-500">
           Уже есть аккаунт?
-          <NuxtLink to="/login" class="text-brand-500 font-semibold hover:underline">Войти</NuxtLink>
+          <NuxtLink to="/login" class="text-blue-600 font-medium hover:underline">Войти</NuxtLink>
         </p>
       </div>
     </div>
@@ -47,25 +55,44 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: false });
-const config = useRuntimeConfig();
-const form = reactive({ username: "", email: "", password: "", full_name: "", role: "employee" });
+const api = useApi();
+const authStore = useAuthStore();
+
+const form = reactive({
+  full_name: "",
+  username: "",
+  email: "",
+  password: "",
+  role: "employee", // всегда employee при публичной регистрации
+});
+
 const loading = ref(false);
 const error = ref("");
 
-async function handleRegister() {
-  loading.value = true;
+async function submit() {
   error.value = "";
+  if (!form.full_name.trim() || !form.username.trim() || !form.email.trim() || !form.password) {
+    error.value = "Заполните все поля";
+    return;
+  }
+  if (form.password.length < 6) {
+    error.value = "Пароль должен содержать минимум 6 символов";
+    return;
+  }
+  loading.value = true;
   try {
-    const res = await fetch(`${config.public.apiBase}/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+    await api.post("/auth/register", form);
+    // Автоматический вход после регистрации
+    const data = await api.post("/auth/login", {
+      username: form.username,
+      password: form.password,
     });
-    if (!res.ok) {
-      const e = await res.json();
-      throw new Error(e.detail || "Ошибка регистрации");
-    }
-    navigateTo("/login");
+    authStore.setAuth(data.access_token, {
+      id: data.user_id,
+      full_name: data.full_name,
+      role: data.role,
+    });
+    navigateTo("/employee");
   } catch (e: any) {
     error.value = e.message;
   } finally {

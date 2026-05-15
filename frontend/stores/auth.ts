@@ -1,45 +1,57 @@
 import { defineStore } from "pinia";
 
+interface AuthUser {
+  id: number;
+  full_name: string;
+  role: string;
+}
+
+const TOKEN_KEY = "transport_token";
+const USER_KEY = "transport_user";
+
 export const useAuthStore = defineStore("auth", {
   state: () => ({
     token: null as string | null,
-    role: null as string | null,
-    userId: null as number | null,
-    fullName: null as string | null,
+    user: null as AuthUser | null,
   }),
+
   getters: {
     isLoggedIn: (s) => !!s.token,
-    isEmployee: (s) => s.role === "employee",
-    isDispatcher: (s) => s.role === "dispatcher",
-    isDriver: (s) => s.role === "driver",
+    role: (s) => s.user?.role ?? null,
   },
+
   actions: {
-    setAuth(data: { access_token: string; role: string; user_id: number; full_name: string }) {
-      this.token = data.access_token;
-      this.role = data.role;
-      this.userId = data.user_id;
-      this.fullName = data.full_name;
-      if (process.client) {
-        localStorage.setItem("auth", JSON.stringify({ token: this.token, role: this.role, userId: this.userId, fullName: this.fullName }));
+    setAuth(token: string, user: AuthUser) {
+      this.token = token;
+      this.user = user;
+      if (import.meta.client) {
+        localStorage.setItem(TOKEN_KEY, token);
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
       }
     },
+
+    // Восстанавливаем сессию из localStorage при перезагрузке страницы
+    restore() {
+      if (!import.meta.client) return;
+      if (this.token) return; // уже восстановлено
+      const token = localStorage.getItem(TOKEN_KEY);
+      const raw = localStorage.getItem(USER_KEY);
+      if (token && raw) {
+        try {
+          this.token = token;
+          this.user = JSON.parse(raw);
+        } catch {
+          this.logout();
+        }
+      }
+    },
+
     logout() {
       this.token = null;
-      this.role = null;
-      this.userId = null;
-      this.fullName = null;
-      if (process.client) localStorage.removeItem("auth");
-    },
-    restore() {
-      if (process.client) {
-        const raw = localStorage.getItem("auth");
-        if (raw) {
-          const d = JSON.parse(raw);
-          this.token = d.token;
-          this.role = d.role;
-          this.userId = d.userId;
-          this.fullName = d.fullName;
-        }
+      this.user = null;
+      if (import.meta.client) {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
       }
     },
   },

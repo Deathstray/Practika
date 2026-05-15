@@ -7,12 +7,19 @@ from auth import verify_password, hash_password, create_access_token, get_curren
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Роли, которые можно выбрать при публичной регистрации.
+# dispatcher и driver создаются только вручную через интерфейс диспетчера.
+PUBLIC_ROLES = ("employee",)
+
 
 @router.post("/login", response_model=TokenResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == data.username).first()
     if not user or not verify_password(data.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверные учётные данные")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверные учётные данные",
+        )
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Аккаунт деактивирован")
 
@@ -27,6 +34,14 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/register", response_model=UserOut)
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
+    # Публичная регистрация доступна только для роли "сотрудник"
+    if data.role not in PUBLIC_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Самостоятельная регистрация доступна только для роли: {', '.join(PUBLIC_ROLES)}. "
+                   "Диспетчеров и водителей добавляет администратор.",
+        )
+
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="Имя пользователя уже занято")
     if db.query(User).filter(User.email == data.email).first():
